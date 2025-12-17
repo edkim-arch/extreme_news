@@ -5,6 +5,7 @@ import urllib.request
 import urllib.parse
 from datetime import datetime, timedelta
 import re
+from difflib import SequenceMatcher
 
 # Helper to remove HTML tags and decode entities
 def clean_html(raw_html):
@@ -17,17 +18,24 @@ def clean_html(raw_html):
     return cleantext
 
 def parse_pubdate(pubdate_str):
-    # Format: "Tue, 17 Dec 2025 09:00:00 +0900"
     try:
         return datetime.strptime(pubdate_str, "%a, %d %b %Y %H:%M:%S %z")
-    except Exception as e:
+    except:
         return None
 
-def process_news_search(client_id, client_secret, keywords, display_count=50):
-    # 14 days ago check
-    now = datetime.now().astimezone() # Local aware
-    fourteen_days_ago = now - timedelta(days=14)
+def is_similar(a, b, threshold=0.8):
+    # Quick check: if lengths differ vastly, not similar
+    len_a, len_b = len(a), len(b)
+    if len_a == 0 or len_b == 0: return False
+    # Optimization: Length ratio check
+    # if one is less than 80% length of other, ratio can't be > 0.8 usually (unless substring)
+    # strict ratio check via difflib
+    ratio = SequenceMatcher(None, a, b).ratio()
+    return ratio >= threshold
 
+def process_news_search(client_id, client_secret, keywords, display_count=50):
+    now = datetime.now().astimezone()
+    fourteen_days_ago = now - timedelta(days=14)
     final_results = {}
 
     for keyword in keywords:
@@ -40,99 +48,102 @@ def process_news_search(client_id, client_secret, keywords, display_count=50):
             req.add_header("X-Naver-Client-Secret", client_secret)
             
             response = urllib.request.urlopen(req)
-            rescode = response.getcode()
-            
-            if rescode == 200:
-                response_body = response.read()
-                data = json.loads(response_body.decode('utf-8'))
-                items = data.get('items', [])
-                
-                seen_links = set()
-                seen_titles = set()
-
-                # Parse and Sort
-                parsed_items = []
-                for item in items:
-                    p_date = parse_pubdate(item['pubDate'])
-                    if not p_date: continue
-                    
-                    parsed_items.append({
-                        'original': item,
-                        'date': p_date
-                    })
-                
-                # Sort descending (Latest first)
-                parsed_items.sort(key=lambda x: x['date'], reverse=True)
-
-                processed_items = []
-                for p_item in parsed_items:
-                    item = p_item['original']
-                    p_date = p_item['date']
-
-                    # Filter 14 days
-                    if p_date < fourteen_days_ago:
-                        continue
-
-                    # Clean features
-                    title = clean_html(item['title'])
-                    link = item['link']
-                    
-                    # Deduplication
-                    if link in seen_links: continue
-                    if title in seen_titles: continue
-                    
-                    seen_links.add(link)
-                    seen_titles.add(title)
-                    
-                    # Format output
-                    processed_items.append({
-                        'title': title,
-                        'link': link,
-                        'pubDate': p_date.strftime("%Y-%m-%d %H:%M:%S"),
-                        'description': clean_html(item['description'])
-                    })
-                
-                final_results[keyword] = processed_items
-            else:
+            if response.getcode() != 200:
                 final_results[keyword] = []
-        except Exception as e:
-            # print(f"Error for {keyword}: {e}")
+                continue
+                
+            data = json.loads(response.read().decode('utf-8'))
+            items = data.get('items', [])
+            
+            # 1. Parse & Sort (Newest First)
+            parsed_items = []
+            for item in items:
+                p_date = parse_pubdate(item['pubDate'])
+                if p_date:
+                    parsed_items.append({'original': item, 'date': p_date})
+            
+            parsed_items.sort(key=lambda x: x['date'], reverse=True)
+
+            processed_items = []
+            
+            # 2. Filter & Advanced Deduplication
+            # seen_links is exact match
+            seen_links = set()
+            
+            # For titles, we must compare against ALL accepted titles in this batch
+            # This is O(N^2) but N is small (display=50~100) -> OK.
+            accepted_titles = [] 
+
+            for p_item in parsed_items:
+                item = p_item['original']
+                p_date = p_item['date']
+
+                if p_date < fourteen_days_ago:
+                    continue
+
+                title = clean_html(item['title'])
+                link = item['link']
+                
+                # A. Exact Link Check
+                if link in seen_links: continue
+
+                # B. Fuzzy Title Check
+                # Compare 'title' with all 'accepted_titles'
+                # If similar to ANY accepted title, we assume it's a duplicate (older version).
+                # Since we sorted by Date DESC, the one already in list is newer.
+                is_duplicate_title = False
+                for acc_title in accepted_titles:
+                    if is_similar(title, acc_title, 0.8):
+                        is_duplicate_title = True
+                        break
+                
+                if is_duplicate_title:
+                    continue
+
+                # Add to accepted
+                seen_links.add(link)
+                accepted_titles.append(title)
+                
+                processed_items.append({
+                    'title': title,
+                    'link': link,
+                    'pubDate': p_date.strftime("%Y-%m-%d %H:%M:%S"),
+                    'description': clean_html(item['description'])
+                })
+            
+            final_results[keyword] = processed_items
+            
+        except Exception:
             final_results[keyword] = []
             
     return final_results
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
-        # 1. Setup CORS and Headers
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
         self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
 
-        # 2. Check Environment Variables
         CLIENT_ID = os.environ.get("NAVER_CLIENT_ID")
         CLIENT_SECRET = os.environ.get("NAVER_CLIENT_SECRET")
         
         if not CLIENT_ID or not CLIENT_SECRET:
-            self.wfile.write(json.dumps({"error": "Missing Server API Keys"}).encode('utf-8'))
+            self.wfile.write(json.dumps({"error": "Missing Keys"}).encode('utf-8'))
             return
 
-        # 3. Parse Request Body
         try:
-            content_length = int(self.headers.get('Content-Length', 0))
-            post_data = self.rfile.read(content_length)
-            body = json.loads(post_data.decode('utf-8'))
+            length = int(self.headers.get('Content-Length', 0))
+            body = json.loads(self.rfile.read(length).decode('utf-8'))
         except:
-            self.wfile.write(json.dumps({"error": "Invalid Request"}).encode('utf-8'))
+            self.wfile.write(json.dumps({"error": "Invalid JSON"}).encode('utf-8'))
             return
 
         keywords = body.get('keywords', [])
-        display_count = body.get('display', 50)
+        display = body.get('display', 50)
         
-        # 4. Process
-        results = process_news_search(CLIENT_ID, CLIENT_SECRET, keywords, display_count)
-        
-        # 5. Return JSON
+        # Optimization: Limit max keywords processed at once if needed, but 10 is fine.
+        results = process_news_search(CLIENT_ID, CLIENT_SECRET, keywords, display)
         self.wfile.write(json.dumps(results).encode('utf-8'))
 
     def do_OPTIONS(self):
