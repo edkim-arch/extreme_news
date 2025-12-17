@@ -16,6 +16,9 @@
             --muted: #888888;
             --border-radius: 12px;
             --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            --cj-blue: #006ec9;
+            /* Added for Summary Card Reference */
+            --cj-red-safe: #e50012;
         }
 
         * {
@@ -262,6 +265,43 @@
             display: none !important;
         }
 
+        /* Trend Summary Card Style */
+        .trend-summary-card {
+            background: rgba(255, 255, 255, 0.05);
+            /* Adjusted for Dark Theme */
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            margin: 1.5rem 1.5rem 0 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .summary-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--primary);
+            /* Use Primary Lime */
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .summary-text {
+            font-size: 0.95rem;
+            color: #ccc;
+            line-height: 1.6;
+            word-break: keep-all;
+        }
+
+        .highlight-keyword {
+            color: #fff;
+            font-weight: 600;
+            text-decoration: underline;
+            text-decoration-color: var(--primary);
+        }
+
         @keyframes slideDown {
             from {
                 opacity: 0;
@@ -283,6 +323,10 @@
 
             .btn {
                 width: 100%;
+            }
+
+            .title {
+                font-size: 1.5rem;
             }
         }
     </style>
@@ -332,11 +376,9 @@
         ];
 
         let selectedKeywords = [];
-        let searchResults = []; // Store raw results
+        let searchResults = [];
 
-        // Init
         window.addEventListener('DOMContentLoaded', () => {
-            // Init Keywords
             renderCheckboxes();
         });
 
@@ -349,15 +391,14 @@
                 const isChecked = selectedKeywords.includes(kw);
                 label.className = `checkbox-label ${isChecked ? 'checked' : ''}`;
                 label.onclick = (e) => {
-                    e.preventDefault(); // Prevent double toggling if clicked on input
+                    e.preventDefault();
                     toggleKeyword(kw);
                 };
 
-                // Using hidden input for semantic reasons, but visual is handled by CSS class
                 label.innerHTML = `
-                <input type="checkbox" style="display:none" ${isChecked ? 'checked' : ''}>
-                ${isChecked ? '✓ ' : ''}${kw}
-            `;
+                    <input type="checkbox" style="display:none" ${isChecked ? 'checked' : ''}>
+                    ${isChecked ? '✓ ' : ''}${kw}
+                `;
                 container.appendChild(label);
             });
         }
@@ -392,7 +433,7 @@
             btn.textContent = '검색 중...';
 
             const resultsContainer = document.getElementById('results-container');
-            resultsContainer.innerHTML = '<div style="text-align:center; padding: 2rem; color: #888;">데이터를 불러오고 있습니다...</div>';
+            resultsContainer.innerHTML = '<div style="text-align:center; padding: 4rem; color: #888;">데이터를 불러오고 있습니다...</div>';
             document.getElementById('results-section').classList.remove('hidden');
 
             try {
@@ -405,16 +446,12 @@
                 if (!res.ok) throw new Error('API Error');
 
                 const data = await res.json();
-                // Server returns Object: { "keyword": [items...], ... }
-
-                // Convert to Array for rendering
                 searchResults = Object.keys(data).map(key => ({
                     keyword: key,
                     items: data[key],
                     totalAfterFilter: data[key].length
                 }));
 
-                // Update Timestamp
                 const now = new Date();
                 const timeStr = new Intl.DateTimeFormat('ko-KR', {
                     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -426,7 +463,7 @@
 
             } catch (e) {
                 console.error(e);
-                alert('검색 중 오류가 발생했습니다.\n' + e.message);
+                alert('검색 중 오류가 발생했습니다.');
                 resultsContainer.innerHTML = '';
             } finally {
                 btn.disabled = false;
@@ -447,31 +484,39 @@
                 const header = document.createElement('div');
                 header.className = 'section-header';
                 header.innerHTML = `
-               <div class="header-info">
-                    <span class="toggle-icon">▼</span>
-                    <span class="keyword-name">${result.keyword}</span>
-               </div>
-               <span class="count-badge">14일 내 ${result.totalAfterFilter}건</span>
-            `;
+                   <div class="header-info">
+                        <span class="toggle-icon">▼</span>
+                        <span class="keyword-name">${result.keyword}</span>
+                   </div>
+                   <span class="count-badge">14일 내 ${result.totalAfterFilter}건</span>
+                `;
 
                 // Content
                 const content = document.createElement('div');
                 content.className = 'section-content';
 
                 if (hasItems) {
+                    // Generate Summary
+                    const titles = result.items.map(i => i.title);
+                    const summary = generateSummary(result.keyword, titles);
+
                     content.innerHTML = `
-                    <div class="news-grid">
-                        ${result.items.map(item => `
-                            <a href="${item.link}" target="_blank" rel="noopener noreferrer" class="news-card">
-                                <h3 class="news-title">${item.title}</h3>
-                                <div class="news-meta">
-                                    <span>네이버뉴스</span>
-                                    <span>${item.pubDate.substring(0, 10)}</span>
-                                </div>
-                            </a>
-                        `).join('')}
-                    </div>
-                `;
+                        <div class="trend-summary-card">
+                            <div class="summary-title">💡 최근 트렌드 요약 (Beta)</div>
+                            <div class="summary-text">${summary}</div>
+                        </div>
+                        <div class="news-grid">
+                            ${result.items.map(item => `
+                                <a href="${item.link}" target="_blank" rel="noopener noreferrer" class="news-card">
+                                    <h3 class="news-title">${item.title}</h3>
+                                    <div class="news-meta">
+                                        <span>네이버뉴스</span>
+                                        <span>${item.pubDate.substring(0, 10)}</span>
+                                    </div>
+                                </a>
+                            `).join('')}
+                        </div>
+                    `;
                 } else {
                     content.innerHTML = `<div class="empty-state">최근 14일 내 검색 결과 없음</div>`;
                 }
@@ -488,6 +533,38 @@
                 section.appendChild(content);
                 container.appendChild(section);
             });
+        }
+
+        // Simple Frequency-based Summary Generator
+        function generateSummary(keyword, titles) {
+            if (titles.length === 0) return "";
+
+            // 1. Extract Words (remove keyword itself, common stop words)
+            const stopWords = ["뉴스", "기사", "관련", "오늘", "내일", "위해", "대한", "통해", "가장", "있다", "없다", "것", "등", "및", "수", "년", "월", "일", keyword];
+            const wordCounts = {};
+
+            titles.forEach(title => {
+                // Remove special chars, split by space
+                const cleanTitle = title.replace(/[^\w\s가-힣]/g, " ");
+                const words = cleanTitle.split(/\s+/);
+
+                words.forEach(word => {
+                    if (word.length > 1 && !stopWords.includes(word) && !word.includes(keyword)) {
+                        wordCounts[word] = (wordCounts[word] || 0) + 1;
+                    }
+                });
+            });
+
+            // 2. Sort by Frequency
+            const sortedWords = Object.entries(wordCounts).sort((a, b) => b[1] - a[1]);
+            const topWords = sortedWords.slice(0, 3).map(pair => `<span class="highlight-keyword">'${pair[0]}'</span>`);
+
+            // 3. Construct Sentence
+            if (topWords.length > 0) {
+                return `이 검색어는 최근 <strong>${topWords.join(", ")}</strong> 등의 키워드와 함께 주로 언급되고 있습니다.<br>총 ${titles.length}건의 관련 기사가 검색되었습니다.`;
+            } else {
+                return `총 ${titles.length}건의 기사가 검색되었습니다. 주요 기사를 아래에서 확인해보세요.`;
+            }
         }
 
         function expandAll() {
