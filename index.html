@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>관심 제품 뉴스 모니터링</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --text-main: #e0e0e0;
+            --text-sub: #a0a0a0;
+            --accent: #4caf50; /* Green friendly/safe color */
+            --accent-hover: #45a049;
+            --border: #333;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2rem;
+            color: #fff;
+        }
+
+        /* Controls */
+        .controls {
+            background-color: var(--card-bg);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            margin-bottom: 20px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            background: #2c2c2c;
+            padding: 8px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            user-select: none;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .checkbox-item:hover { background: #3c3c3c; }
+        .checkbox-item.checked {
+            background: rgba(76, 175, 80, 0.2);
+            border-color: var(--accent);
+            color: #fff;
+        }
+
+        .checkbox-item input { margin-right: 8px; }
+
+        .btn-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn-group-left button {
+            background: transparent;
+            border: 1px solid #555;
+            color: var(--text-sub);
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+        .btn-group-left button:hover { border-color: #888; color: #fff; }
+
+        .search-btn {
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            padding: 10px 30px;
+            border-radius: 5px;
+            font-weight: bold;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        .search-btn:hover { background-color: var(--accent-hover); }
+        .search-btn:disabled { background-color: #555; cursor: not-allowed; opacity: 0.7; }
+
+        /* Global Toggles */
+        .global-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 10px;
+            gap: 10px;
+        }
+        .action-btn {
+            background: transparent;
+            border: none;
+            color: var(--accent);
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .action-btn:hover { text-decoration: underline; }
+
+        /* Results */
+        .results { display: flex; flex-direction: column; gap: 20px; }
+
+        .section {
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .section-header {
+            padding: 15px 20px;
+            background: #252525;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border);
+        }
+        .section-header:hover { background: #2a2a2a; }
+        .section-title { font-weight: bold; font-size: 1.1rem; color: #fff; }
+        .section-badge { background: #444; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; margin-left: 10px; }
+        .toggle-icon { transition: transform 0.3s; }
+        .section.collapsed .toggle-icon { transform: rotate(-90deg); }
+        .section.collapsed .section-content { display: none; }
+        .section.collapsed .section-header { border-bottom: none; }
+
+        .article-list {
+            padding: 5px 0;
+        }
+
+        .article {
+            padding: 15px 20px;
+            border-bottom: 1px solid #333;
+            transition: background 0.2s;
+        }
+        .article:last-child { border-bottom: none; }
+        .article:hover { background: #2a2a2a; }
+
+        .article-title {
+            display: block;
+            font-size: 1rem;
+            color: #64b5f6;
+            text-decoration: none;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        .article-title:hover { text-decoration: underline; }
+
+        .article-meta {
+            font-size: 0.85rem;
+            color: #888;
+        }
+        .article-desc {
+            font-size: 0.9rem;
+            color: #bbb;
+            margin-top: 5px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .no-results { padding: 20px; text-align: center; color: #666; font-style: italic; }
+        .error-msg { color: #ff5252; text-align: center; margin-top: 10px; }
+        .loading { text-align: center; padding: 40px; color: var(--accent); }
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>뉴스 모니터링</h1>
+
+    <div class="controls">
+        <div class="checkbox-group" id="keywordArea">
+            <!-- Keywords injected here -->
+        </div>
+
+        <div class="btn-row">
+            <div class="btn-group-left">
+                <button onclick="toggleAll(true)">전체 선택</button>
+                <button onclick="toggleAll(false)">전체 해제</button>
+            </div>
+            <button class="search-btn" id="searchBtn" onclick="runSearch()">뉴스 검색</button>
+        </div>
+        <div id="statusMsg" class="error-msg"></div>
+    </div>
+
+    <div class="global-actions" id="globalActions" style="display:none;">
+        <button class="action-btn" onclick="setAllSections(true)">전체 펼치기</button>
+        <button class="action-btn" onclick="setAllSections(false)">전체 접기</button>
+    </div>
+
+    <div id="resultsArea" class="results">
+        <!-- Results injected here -->
+    </div>
+</div>
+
+<script>
+    const KEYWORDS = [
+        "아르기닌", "블랙마카", "단백질쉐이크", "에너지젤", "모노크레아틴",
+        "올인원포맨", "밀크씨슬", "오메가3", "쏘팔메토", "프로바이오틱스", 
+        "김종국"
+    ];
+
+    // Initialize Checkboxes
+    const keywordArea = document.getElementById('keywordArea');
+    KEYWORDS.forEach(k => {
+        const label = document.createElement('label');
+        label.className = 'checkbox-item';
+        label.innerHTML = `<input type="checkbox" value="${k}" onchange="updateStyle(this)"> ${k}`;
+        keywordArea.appendChild(label);
+    });
+
+    function updateStyle(checkbox) {
+        if(checkbox.checked) checkbox.parentElement.classList.add('checked');
+        else checkbox.parentElement.classList.remove('checked');
+    }
+
+    function toggleAll(check) {
+        const boxes = document.querySelectorAll('#keywordArea input[type="checkbox"]');
+        boxes.forEach(box => {
+            box.checked = check;
+            updateStyle(box);
+        });
+    }
+
+    function setAllSections(expand) {
+        const sections = document.querySelectorAll('.section');
+        sections.forEach(sec => {
+            if(expand) sec.classList.remove('collapsed');
+            else sec.classList.add('collapsed');
+        });
+    }
+
+    async function runSearch() {
+        // Collect keywords
+        const checkedBoxes = document.querySelectorAll('#keywordArea input:checked');
+        const keywords = Array.from(checkedBoxes).map(cb => cb.value);
+        const statusMsg = document.getElementById('statusMsg');
+        const resultsArea = document.getElementById('resultsArea');
+        const globalActions = document.getElementById('globalActions');
+        const btn = document.getElementById('searchBtn');
+
+        if (keywords.length === 0) {
+            statusMsg.textContent = "최소 1개 이상의 키워드를 선택해주세요.";
+            return;
+        }
+
+        statusMsg.textContent = "";
+        resultsArea.innerHTML = '<div class="loading">데이터를 불러오는 중입니다...</div>';
+        btn.disabled = true;
+        globalActions.style.display = 'none';
+
+        try {
+            const response = await fetch('/api/news', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keywords: keywords, display: 50 })
+            });
+
+            if (!response.ok) throw new Error("API 호출 실패");
+
+            const data = await response.json();
+            renderResults(data);
+            globalActions.style.display = 'flex';
+
+        } catch (e) {
+            console.error(e);
+            resultsArea.innerHTML = `<div class="error-msg">오류가 발생했습니다: ${e.message}</div>`;
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    function renderResults(data) {
+        const container = document.getElementById('resultsArea');
+        container.innerHTML = '';
+
+        // data is { "keyword": [items...] }
+        for (const [keyword, items] of Object.entries(data)) {
+            const section = document.createElement('div');
+            section.className = 'section';
+
+            const count = items.length;
+            const header = document.createElement('div');
+            header.className = 'section-header';
+            header.onclick = () => section.classList.toggle('collapsed');
+            
+            header.innerHTML = `
+                <div>
+                    <span class="section-title">${keyword}</span>
+                    <span class="section-badge">${count}건</span>
+                </div>
+                <span class="toggle-icon">▼</span>
+            `;
+
+            const content = document.createElement('div');
+            content.className = 'section-content';
+
+            if (count === 0) {
+                content.innerHTML = '<div class="no-results">최근 14일 이내 관련 기사가 없습니다.</div>';
+            } else {
+                const list = document.createElement('div');
+                list.className = 'article-list';
+                items.forEach(item => {
+                    const article = document.createElement('div');
+                    article.className = 'article';
+                    article.innerHTML = `
+                        <a href="${item.link}" target="_blank" rel="noopener noreferrer" class="article-title">${item.title}</a>
+                        <div class="article-meta">
+                            ${item.pubDate}
+                        </div>
+                        <div class="article-desc">${item.description}</div>
+                    `;
+                    list.appendChild(article);
+                });
+                content.appendChild(list);
+            }
+
+            section.appendChild(header);
+            section.appendChild(content);
+            container.appendChild(section);
+        }
+    }
+</script>
+
+</body>
+</html>
